@@ -4,14 +4,15 @@ import time
 import pandas as pd
 from bs4 import BeautifulSoup
 from selenium import webdriver
+from selenium.common import NoSuchElementException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 import requests
 import json
 
 
-# Define a function to convert WebP images to PNG and save them, and return a dictionary containing the filename, image source, caption, title, and link.
-def convert_save_image(image_url, caption_text, folder_name, title, link):
+# Define a function to convert WebP images to PNG and save them, and return a dictionary containing the filename and caption.
+def convert_save_image(image_url, caption_text, folder_name):
     response = requests.get(image_url)
     if response.status_code == 200:
         if not os.path.exists(folder_name):
@@ -29,24 +30,38 @@ def convert_save_image(image_url, caption_text, folder_name, title, link):
         with Image.open(os.path.join(folder_name, filename)) as im:
             im.save(os.path.join(folder_name, filename))
 
-        # Return filename, image source, caption, title, and link as a dictionary
-        return {"filename": filename,  "caption": encoded_caption}
+        # Return filename and caption text as a dictionary
+        return {"filename": filename, "caption": [encoded_caption]}
 
     return None
 
 # Set up the driver
-dataset = pd.DataFrame(columns=['news_title', 'news_link','image_src', 'caption'])
+dataset = pd.DataFrame(columns=['news_title', 'news_link'])
 driver = webdriver.Chrome()
 
 # Navigate to the page
-driver.get('https://www.prothomalo.com/photo/bangladesh')
+driver.get('https://www.prothomalo.com/photo/international')
 time.sleep(2)
 
 # Find all the image elements
 title = []
 link = []
-img_src =[]
-caption = []
+num_loads = 1
+
+# click the Load More button 'num_loads' times
+
+for i in range(num_loads):
+    try:
+    # Locate the Load More button using JavaScript
+        load_more_button = driver.find_element(By.CLASS_NAME,"load-more-content")
+        driver.execute_script("arguments[0].click();", load_more_button)
+        print(f"Clicked Load More button {i+1} times")
+
+    # Wait for some time to allow the page to load
+        time.sleep(5)
+    except NoSuchElementException:
+        print("Load More button not found")
+        break
 blocks = driver.find_elements(By.CLASS_NAME, 'left_image_right_news')
 
 # Loop over the images and store their titles and links in a DataFrame
@@ -57,6 +72,7 @@ for block in blocks:
 
     title.append(ftitle)
     link.append(flink)
+
 caption_data = {'News_title': title, 'News_link': link}
 news = pd.DataFrame(data=caption_data)
 data = {'title': title, 'link': link}
@@ -65,12 +81,12 @@ dataset = pd.concat([review], ignore_index=True)
 
 # Close the driver
 driver.quit()
-# Download each image and extract its caption, and store the filename, image source, caption, title, and link in a list of dictionaries
+
+# Download each image and extract its caption, and store the filename and caption in a list of dictionaries
 folder_name = 'images'
 captions_list = []
 
-for url, title, link in zip(news['News_link'], news['News_title'], news['News_link']):
-
+for url in link:
     driver = webdriver.Chrome()
     driver.get(url)
 
@@ -86,44 +102,36 @@ for url, title, link in zip(news['News_link'], news['News_title'], news['News_li
         driver.execute_script("arguments[0].scrollIntoView();", news_item)
         time.sleep(2)
 
-        if news_item.find_elements(By.CLASS_NAME, "story-element-image"):
-            # Find the image element and its source URL.
-            image_element = news_item.find_element(By.CLASS_NAME, "story-element-image").find_element(By.TAG_NAME,
-                                                                                                      "img")
-            image_url = image_element.get_attribute("src")
+        try:
+            if news_item.find_elements(By.CLASS_NAME, "story-element-image"):
+                # Find the image element and its source URL.
+                image_element = news_item.find_element(By.CLASS_NAME, "story-element-image").find_element(By.TAG_NAME,
+                                                                                                          "img")
+                image_url = image_element.get_attribute("src")
 
-            # Check if the news item has a caption element.
-            if news_item.find_elements(By.CLASS_NAME, "story-element-image-title"):
-                # Find the caption element and its text content.
-                caption_element = news_item.find_element(By.CLASS_NAME, "story-element-image-title")
-                caption_text = caption_element.text
+                # Check if the news item has a caption element.
+                if news_item.find_elements(By.CLASS_NAME, "story-element-image-title"):
+                    # Find the caption element and its text content.
+                    caption_element = news_item.find_element(By.CLASS_NAME, "story-element-image-title")
+                    caption_text = caption_element.text
 
-                # Print the image URL and caption.
-                print("Image URL:", image_url)
-                print("Caption:", caption_text)
+                    # Print the image URL and caption.
+                    print("Image URL:", image_url)
+                    print("Caption:", caption_text)
 
-                # Convert the WebP image to PNG and save it, and store the filename, image source, caption, title, and link in a dictionary
-                caption_dict = convert_save_image(image_url, caption_text, folder_name, title, link)
-                if caption_dict is not None:
-                    captions_list.append(caption_dict)
-    img_src.append(image_url)
-    caption.append(caption_text)
+                    # Convert the WebP image to PNG and save it, and store the filename and caption in a dictionary
+                    caption_dict = convert_save_image(image_url, caption_text, folder_name)
+                    if caption_dict is not None:
+                        captions_list.append(caption_dict)
+        except Exception as e:
+            print(f"Error: {e}")
+            continue
 
     driver.quit()
 
-with open('captions.json', 'w', encoding='utf-8') as f:
-    json.dump(captions_list, f, ensure_ascii=False)
-# Convert captions_list to a DataFrame
-captions_df = pd.DataFrame(captions_list)
+    # Write captions_list to a .json file
+    with open('captions.json', 'w', encoding='utf-8') as f:
+        json.dump(captions_list, f, ensure_ascii=False)
 
-# Concatenate the captions DataFrame with the existing dataset DataFrame
-combined_df = pd.concat([dataset, captions_df], axis=1)
-
-
-# Save the combined
-caption1 = {'Img_Src':img_src,'caption':caption}
-
-data1 = {'img_src':img_src,'caption':caption}
-review1 = pd.DataFrame(data=data1)
-dataset1 = pd.concat([review,review1], ignore_index=True)
-dataset1.to_csv('bangla news caption dataset.csv')
+    # Save the DataFrame to a .csv file
+    dataset.to_csv('bangla news caption dataset.csv')

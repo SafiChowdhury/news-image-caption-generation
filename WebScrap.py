@@ -4,6 +4,7 @@ import time
 import pandas as pd
 from bs4 import BeautifulSoup
 from selenium import webdriver
+from selenium.common import NoSuchElementException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 import requests
@@ -34,20 +35,39 @@ def convert_save_image(image_url, caption_text, folder_name):
 
     return None
 
-# Set up the driver
+
 dataset = pd.DataFrame(columns=['news_title', 'news_link'])
+# Set up the driver
 driver = webdriver.Chrome()
 
-# Navigate to the page
-driver.get('https://www.prothomalo.com/photo/bangladesh')
+# Navigate to the page and wait 2 sec
+driver.get('https://www.prothomalo.com/photo/international')
 time.sleep(2)
 
-# Find all the image elements
+
 title = []
 link = []
+
+num_loads = 1
+# Click the Load More button 'num_loads' times
+
+for i in range(num_loads):
+    try:
+    # Locate the Load More button using JavaScript
+        load_more_button = driver.find_element(By.CLASS_NAME,"load-more-content")
+        driver.execute_script("arguments[0].click();", load_more_button)
+        print(f"Clicked Load More button {i+1} times")
+
+    # Wait for some time to allow the page to load
+        time.sleep(5)
+    except NoSuchElementException:
+        print("Load More button not found")
+        break
+
+# Find all the story elements
 blocks = driver.find_elements(By.CLASS_NAME, 'left_image_right_news')
 
-# Loop over the images and store their titles and links in a DataFrame
+# Loop over the stories and store their titles and links in a DataFrame
 for block in blocks:
     ftitle = block.find_element(By.CLASS_NAME, 'headline-title').text
     block_link = block.find_element(By.TAG_NAME, 'a')
@@ -69,6 +89,7 @@ driver.quit()
 folder_name = 'images'
 captions_list = []
 
+# Loop over each link
 for url in link:
     driver = webdriver.Chrome()
     driver.get(url)
@@ -81,30 +102,35 @@ for url in link:
 
     # Loop over each news item to extract its image URL and caption.
     for i, news_item in enumerate(news_items):
-        # Check if the news item has an image element.
+        # wait 2 sec in every news to load the image
         driver.execute_script("arguments[0].scrollIntoView();", news_item)
         time.sleep(2)
 
-        if news_item.find_elements(By.CLASS_NAME, "story-element-image"):
-            # Find the image element and its source URL.
-            image_element = news_item.find_element(By.CLASS_NAME, "story-element-image").find_element(By.TAG_NAME,
-                                                                                                      "img")
-            image_url = image_element.get_attribute("src")
+        try:
+            # Check if the news item has an image element.
+            if news_item.find_elements(By.CLASS_NAME, "story-element-image"):
+                # Find the image element and its source URL.
+                image_element = news_item.find_element(By.CLASS_NAME, "story-element-image").find_element(By.TAG_NAME,
+                                                                                                          "img")
+                image_url = image_element.get_attribute("src")
 
-            # Check if the news item has a caption element.
-            if news_item.find_elements(By.CLASS_NAME, "story-element-image-title"):
-                # Find the caption element and its text content.
-                caption_element = news_item.find_element(By.CLASS_NAME, "story-element-image-title")
-                caption_text = caption_element.text
+                # Check if the news item has a caption element.
+                if news_item.find_elements(By.CLASS_NAME, "story-element-image-title"):
+                    # Find the caption element and its text content.
+                    caption_element = news_item.find_element(By.CLASS_NAME, "story-element-image-title")
+                    caption_text = caption_element.text
 
-                # Print the image URL and caption.
-                print("Image URL:", image_url)
-                print("Caption:", caption_text)
+                    # Print the image URL and caption.
+                    print("Image URL:", image_url)
+                    print("Caption:", caption_text)
 
-                # Convert the WebP image to PNG and save it, and store the filename and caption in a dictionary
-                caption_dict = convert_save_image(image_url, caption_text, folder_name)
-                if caption_dict is not None:
-                    captions_list.append(caption_dict)
+                    # Convert the WebP image to PNG and save it, and store the filename and caption in a dictionary
+                    caption_dict = convert_save_image(image_url, caption_text, folder_name)
+                    if caption_dict is not None:
+                        captions_list.append(caption_dict)
+        except Exception as e:
+            print(f"Error: {e}")
+            continue
 
     driver.quit()
 
